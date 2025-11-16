@@ -1,0 +1,82 @@
+# Load Balancer Configuration
+# Example configuration for load balancer with client certificate session detection
+
+[load_balancer]
+# Session timeout in seconds (how long to maintain session affinity)
+session_timeout_sec = 300
+
+# Load balancing algorithm:
+#   "round-robin"        - Distribute using consistent hashing
+#   "least-connections"  - Send to backend with fewest active connections
+#   "weighted"           - Distribute based on backend weights
+algorithm = "round-robin"
+
+# Require client certificate authentication
+require_cert_auth = true
+
+# Enable the load balancer
+enabled = true
+
+# Backend server pool
+[[backends]]
+id = 0
+ip = "192.168.1.10"
+port = 8080
+enabled = true
+weight = 100  # Higher weight = more traffic (used in weighted mode)
+max_connections = 1000
+
+[[backends]]
+id = 1
+ip = "192.168.1.11"
+port = 8080
+enabled = true
+weight = 100
+max_connections = 1000
+
+[[backends]]
+id = 2
+ip = "192.168.1.12"
+port = 8080
+enabled = true
+weight = 50  # Lower weight = less traffic
+max_connections = 500
+
+# Optional: You can add more backends (up to 16 total)
+# [[backends]]
+# id = 3
+# ip = "192.168.1.13"
+# port = 8080
+# enabled = false
+# weight = 100
+# max_connections = 1000
+
+# Client certificates (trusted clients)
+[[certificates]]
+id = 0
+name = "client-cert-1"
+# Generate a new keypair on startup (for testing)
+generate_on_startup = true
+# Optional: Provide a specific public key (65 bytes hex, uncompressed format)
+# public_key_hex = "04..."
+valid_until_days = 365
+
+[[certificates]]
+id = 1
+name = "client-cert-2"
+generate_on_startup = true
+valid_until_days = 365
+
+[[certificates]]
+id = 2
+name = "client-cert-3"
+generate_on_startup = true
+valid_until_days = 180
+
+# Example with a specific public key:
+# [[certificates]]
+# id = 3
+# name = "production-client-1"
+# generate_on_startup = false
+# public_key_hex = "04a1b2c3d4..."  # 65 bytes (130 hex chars) - uncompressed ECDSA P-256 public key
+# valid_until_days = 730

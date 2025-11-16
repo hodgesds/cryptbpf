@@ -67,6 +67,15 @@ enum Commands {
         #[arg(short, long)]
         device: String,
     },
+    /// Load the load balancer with client certificate session detection
+    LoadBalancer {
+        /// Network interface to attach to
+        #[arg(short, long)]
+        device: String,
+        /// Path to TOML configuration file
+        #[arg(short, long)]
+        config: Option<String>,
+    },
     /// Show statistics for all loaded programs
     Stats,
     /// Compare BPF hash computation with Rust (bpf_prog_test_run demo)
@@ -126,6 +135,9 @@ fn main() -> Result<()> {
         }
         Commands::CryptoOffload { device } => {
             demos::crypto_offload::run(&device)
+        }
+        Commands::LoadBalancer { device, config } => {
+            demos::load_balancer::run(&device, config.as_deref())
         }
         Commands::Stats => {
             println!("=== CryptBPF Statistics ===\n");
