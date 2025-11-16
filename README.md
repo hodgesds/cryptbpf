@@ -802,14 +802,6 @@ println!("Routed to BPF: {}", stats.routed_to_bpf);
 println!("Routed to HW: {}", stats.routed_to_hw);
 ```
 
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-1. Code follows Rust and BPF best practices
-2. All security implications are documented
-3. Tests pass on latest kernel versions
-
 ## References
 
 - [BPF Documentation](https://docs.kernel.org/bpf/)
