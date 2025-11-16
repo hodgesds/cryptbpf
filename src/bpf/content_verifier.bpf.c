@@ -143,8 +143,11 @@ int xdp_content_verifier(struct xdp_md *ctx)
     if (content_len > config->max_content_size || content_len > MAX_CONTENT_SIZE) {
         if (stats)
             update_stat(&stats->content_too_large);
+        bpf_printk("CAS: Content too large (%u bytes) from %pI4, DROP", content_len, &iph->saddr);
         return XDP_DROP;
     }
+
+    bpf_printk("CAS: Verifying content from %pI4 len=%u", &iph->saddr, content_len);
 
     // Get pointer to actual content
     __u8 *content = bpf_ptr_add(payload, sizeof(struct cas_header));
@@ -162,10 +165,12 @@ int xdp_content_verifier(struct xdp_md *ctx)
                 update_stat(&stats->cache_hits);
                 update_stat(&stats->packets_verified);
             }
+            bpf_printk("CAS: Cache HIT, PASS (count=%u)", cache_entry->verify_count);
             return XDP_PASS;
         }
         if (stats)
             update_stat(&stats->cache_misses);
+        bpf_printk("CAS: Cache MISS, computing hash");
     }
 
     // Compute SHA-256 hash of content
@@ -183,9 +188,12 @@ int xdp_content_verifier(struct xdp_md *ctx)
             update_stat(&stats->hash_mismatches);
             update_stat(&stats->packets_invalid);
         }
+        bpf_printk("CAS: Hash MISMATCH! Content tampered, DROP");
         // Hash mismatch - content has been tampered with!
         return XDP_DROP;
     }
+
+    bpf_printk("CAS: Hash verified successfully");
 
     // Check allowlist if enforced
     if (config->enforce_allowlist) {
@@ -193,10 +201,12 @@ int xdp_content_verifier(struct xdp_md *ctx)
         if (!allowed) {
             if (stats)
                 update_stat(&stats->allowlist_misses);
+            bpf_printk("CAS: Content not in allowlist, DROP");
             return XDP_DROP;
         }
         if (stats)
             update_stat(&stats->allowlist_hits);
+        bpf_printk("CAS: Allowlist check passed");
     }
 
     // Content verified! Update cache
@@ -211,6 +221,8 @@ int xdp_content_verifier(struct xdp_md *ctx)
 
     if (stats)
         update_stat(&stats->packets_verified);
+
+    bpf_printk("CAS: Content verified, PASS");
 
     return XDP_PASS;
 }

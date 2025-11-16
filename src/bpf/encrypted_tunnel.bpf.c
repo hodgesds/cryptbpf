@@ -104,6 +104,8 @@ int xdp_encrypted_tunnel(struct xdp_md *ctx)
         if (thdr->magic != bpf_htonl(0xDEADBEEF))
             return XDP_PASS;
 
+        bpf_printk("Tunnel: RX encrypted packet from %pI4:%u seq=%u", &iph->saddr, bpf_ntohs(udph->source), bpf_ntohl(thdr->seq));
+
         // In a real implementation, we would:
         // 1. Extract encrypted payload
         // 2. Use bpf_crypto_decrypt() with the IV and context
@@ -131,6 +133,8 @@ int xdp_encrypted_tunnel(struct xdp_md *ctx)
         // 2. Use bpf_crypto_encrypt() with generated IV
         // 3. Prepend tunnel header with IV and tag
         // 4. Wrap in new UDP packet to remote_ip:TUNNEL_PORT
+
+        bpf_printk("Tunnel: TX packet to %pI4 proto=%u, should encrypt", &iph->daddr, iph->protocol);
 
         struct tunnel_stats *stats = bpf_map_lookup_elem(&stats_map, &key);
         if (stats) {

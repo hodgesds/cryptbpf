@@ -165,6 +165,8 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         if (stats)
             update_stat(&stats->challenges_issued);
 
+        bpf_printk("PoW: New client %pI4, issuing challenge (difficulty=%u)", &client_ip, config->pow_difficulty);
+
         // Drop packet - client needs to solve PoW first
         return XDP_DROP;
     }
@@ -189,6 +191,7 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         if (pow->magic != bpf_htonl(0x504F5721)) {
             if (stats)
                 update_stat(&stats->packets_ratelimited);
+            bpf_printk("PoW: Client %pI4 missing PoW header, DROP", &client_ip);
             return XDP_DROP;
         }
 
@@ -196,6 +199,7 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         if (!verify_difficulty(pow->solution, challenge->difficulty)) {
             if (stats)
                 update_stat(&stats->invalid_pow);
+            bpf_printk("PoW: Client %pI4 solution difficulty check failed, DROP", &client_ip);
             return XDP_DROP;
         }
 
@@ -222,6 +226,7 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         if (!hash_match) {
             if (stats)
                 update_stat(&stats->solutions_rejected);
+            bpf_printk("PoW: Client %pI4 solution hash mismatch, DROP", &client_ip);
             return XDP_DROP;
         }
 
@@ -229,6 +234,8 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         challenge->solved = 1;
         if (stats)
             update_stat(&stats->solutions_verified);
+
+        bpf_printk("PoW: Client %pI4 SOLVED challenge! nonce=%llu", &client_ip, pow->nonce);
 
         // Initialize rate limit state
         state->tokens = config->bucket_size;
@@ -252,6 +259,7 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
     if (state->tokens == 0) {
         if (stats)
             update_stat(&stats->packets_ratelimited);
+        bpf_printk("PoW: Client %pI4 rate limited (no tokens), DROP", &client_ip);
         return XDP_DROP;
     }
 
@@ -262,6 +270,8 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
 
     if (stats)
         update_stat(&stats->packets_allowed);
+
+    bpf_printk("PoW: Client %pI4 PASS (tokens=%u, count=%u)", &client_ip, state->tokens, state->packet_count);
 
     return XDP_PASS;
 }

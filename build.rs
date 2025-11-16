@@ -11,6 +11,8 @@ const BPF_PROGRAMS: &[&str] = &[
     "pki_validator",
     "content_verifier",
     "crypto_offload",
+    "hash_test",
+    "ecdsa_test",
 ];
 
 fn main() {

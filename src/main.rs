@@ -7,6 +7,10 @@ mod demos;
 #[command(name = "cryptbpf")]
 #[command(about = "Advanced BPF Cryptography Programs", long_about = None)]
 struct Cli {
+    /// Enable verbose libbpf logging
+    #[arg(short, long, global = true)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -65,13 +69,29 @@ enum Commands {
     },
     /// Show statistics for all loaded programs
     Stats,
+    /// Compare BPF hash computation with Rust (bpf_prog_test_run demo)
+    HashComparison,
+    /// Demonstrate bpf_prog_test_run usage with test packets
+    ProgTestRunDemo,
+    /// Check kernel support for BPF crypto kfuncs
+    KernelCheck,
+    /// Compare BPF ECDSA verification with Rust (secp256r1)
+    EcdsaVerification,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Check if running as root
-    if !nix::unistd::Uid::effective().is_root() {
+    // Enable verbose libbpf logging if requested
+    if cli.verbose {
+        libbpf_rs::set_print(Some((libbpf_rs::PrintLevel::Debug, |level, msg| {
+            eprintln!("[libbpf {:?}] {}", level, msg);
+        })));
+    }
+
+    // Check if running as root (not needed for test/demo commands)
+    let needs_root = !matches!(cli.command, Commands::HashComparison | Commands::ProgTestRunDemo | Commands::KernelCheck | Commands::EcdsaVerification);
+    if needs_root && !nix::unistd::Uid::effective().is_root() {
         eprintln!("Error: This program must be run as root (sudo)");
         std::process::exit(1);
     }
@@ -112,6 +132,18 @@ fn main() -> Result<()> {
             println!("Program statistics would be displayed here.");
             println!("This would query BPF maps for counters from all loaded programs.");
             Ok(())
+        }
+        Commands::HashComparison => {
+            demos::hash_comparison::run()
+        }
+        Commands::ProgTestRunDemo => {
+            demos::prog_test_run_demo::run()
+        }
+        Commands::KernelCheck => {
+            demos::kernel_check::run()
+        }
+        Commands::EcdsaVerification => {
+            demos::ecdsa_verification::run()
         }
     }
 }
