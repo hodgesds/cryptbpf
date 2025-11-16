@@ -802,19 +802,6 @@ println!("Routed to BPF: {}", stats.routed_to_bpf);
 println!("Routed to HW: {}", stats.routed_to_hw);
 ```
 
-**Performance Comparison**:
-```
-┌─────────────────┬────────────┬──────────────┬──────────────┐
-│ Operation       │ Size       │ BPF Latency  │ HW Latency   │
-├─────────────────┼────────────┼──────────────┼──────────────┤
-│ SHA-256         │ 256 B      │ 100 ns ✓     │ 5 μs         │
-│ SHA-256         │ 4 KB       │ 1.5 μs       │ 500 ns ✓     │
-│ AES-GCM Encrypt │ 1500 B     │ 500 ns       │ 200 ns ✓     │
-│ ECDSA Verify    │ 32 B       │ 20 μs ✓      │ 50 μs        │
-└─────────────────┴────────────┴──────────────┴──────────────┘
-```
-
-**Run**: `cargo run -- crypto-offload --device eth0`
 
 ## Contributing
 
