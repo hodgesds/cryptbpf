@@ -52,11 +52,14 @@ struct {
     __type(value, struct sig_stats);
 } sig_stats_map SEC(".maps");
 
-// External kfunc declarations
-extern int bpf_sha256_hash(const __u8 *data, __u32 len, __u8 *out) __ksym;
-extern int bpf_ecdsa_verify_secp256r1(const __u8 *message, __u32 msg_len,
-                                      const __u8 *signature,
-                                      const __u8 *public_key) __ksym;
+// External kfunc declarations (updated for dynptr API)
+extern int bpf_sha256_hash(const struct bpf_dynptr *data, const struct bpf_dynptr *out) __ksym;
+extern struct bpf_ecdsa_ctx *bpf_ecdsa_ctx_create(const struct bpf_dynptr *algo_name, const struct bpf_dynptr *public_key, int *err) __ksym;
+extern void bpf_ecdsa_ctx_release(struct bpf_ecdsa_ctx *ctx) __ksym;
+extern int bpf_ecdsa_verify(struct bpf_ecdsa_ctx *ctx, const struct bpf_dynptr *message, const struct bpf_dynptr *signature) __ksym;
+
+// Algorithm name for ECDSA
+static const char ecdsa_algo[] = "p1363(ecdsa-nist-p256)";
 
 static __always_inline void update_stat(__u64 *counter)
 {
@@ -139,15 +142,84 @@ int xdp_signed_auth(struct xdp_md *ctx)
     if (data_len > 1024)
         data_len = 1024;  // Limit for demo
 
-    int ret = bpf_sha256_hash(payload_start, data_len, hash);
+    struct bpf_dynptr data_ptr, out_ptr;
+    long ret_init;
+
+    ret_init = bpf_dynptr_from_mem(payload_start, data_len, 0, &data_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->packets_rejected);
+        return XDP_DROP;
+    }
+
+    ret_init = bpf_dynptr_from_mem(hash, 32, 0, &out_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->packets_rejected);
+        return XDP_DROP;
+    }
+
+    int ret = bpf_sha256_hash(&data_ptr, &out_ptr);
     if (ret != 0) {
         if (stats)
             update_stat(&stats->packets_rejected);
         return XDP_DROP;
     }
 
+    // Create ECDSA context with trusted key's public key
+    char algo_buf[24];
+    __builtin_memcpy(algo_buf, ecdsa_algo, 22);
+    algo_buf[22] = '\0';
+
+    int err = 0;
+    struct bpf_dynptr algo_ptr, pubkey_ptr;
+
+    ret_init = bpf_dynptr_from_mem(algo_buf, 22, 0, &algo_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->packets_rejected);
+        return XDP_DROP;
+    }
+
+    ret_init = bpf_dynptr_from_mem((__u8 *)tkey->pubkey, 65, 0, &pubkey_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->packets_rejected);
+        return XDP_DROP;
+    }
+
+    struct bpf_ecdsa_ctx *ecdsa_ctx = bpf_ecdsa_ctx_create(&algo_ptr, &pubkey_ptr, &err);
+    if (!ecdsa_ctx) {
+        if (stats)
+            update_stat(&stats->invalid_signature);
+        return XDP_DROP;
+    }
+
+    // Prepare message and signature dynptrs
+    struct bpf_dynptr msg_ptr, sig_ptr;
+
+    ret_init = bpf_dynptr_from_mem(hash, 32, 0, &msg_ptr);
+    if (ret_init < 0) {
+        bpf_ecdsa_ctx_release(ecdsa_ctx);
+        if (stats)
+            update_stat(&stats->invalid_signature);
+        return XDP_DROP;
+    }
+
+    ret_init = bpf_dynptr_from_mem((__u8 *)sighdr->signature, 64, 0, &sig_ptr);
+    if (ret_init < 0) {
+        bpf_ecdsa_ctx_release(ecdsa_ctx);
+        if (stats)
+            update_stat(&stats->invalid_signature);
+        return XDP_DROP;
+    }
+
     // Verify ECDSA signature
-    ret = bpf_ecdsa_verify_secp256r1(hash, 32, sighdr->signature, tkey->pubkey);
+    ret = bpf_ecdsa_verify(ecdsa_ctx, &msg_ptr, &sig_ptr);
+
+    // Release the context
+    bpf_ecdsa_ctx_release(ecdsa_ctx);
+
     if (ret != 0) {
         if (stats)
             update_stat(&stats->invalid_signature);

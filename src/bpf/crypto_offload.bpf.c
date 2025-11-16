@@ -111,8 +111,8 @@ struct {
     __type(value, struct offload_stats);
 } offload_stats_map SEC(".maps");
 
-// External kfunc declarations
-extern int bpf_sha256_hash(const __u8 *data, __u32 len, __u8 *out) __ksym;
+// External kfunc declarations (updated for dynptr API)
+extern int bpf_sha256_hash(const struct bpf_dynptr *data, const struct bpf_dynptr *out) __ksym;
 
 static __always_inline void update_stat(__u64 *counter)
 {
@@ -243,14 +243,23 @@ int xdp_crypto_offload(struct xdp_md *ctx)
 
             if (bpf_ptr_add(hash_data, hash_len) <= data_end) {
                 __u8 hash_out[32];
-                int ret = bpf_sha256_hash(hash_data, hash_len, hash_out);
+                struct bpf_dynptr data_ptr, out_ptr;
+                long ret_init;
 
-                __u64 latency = bpf_ktime_get_ns() - start;
-                if (perf) {
-                    __sync_fetch_and_add(&perf->bpf_ops_completed, 1);
-                    __sync_fetch_and_add(&perf->bpf_total_latency_ns, latency);
-                    if (ret != 0)
-                        __sync_fetch_and_add(&perf->bpf_ops_failed, 1);
+                ret_init = bpf_dynptr_from_mem(hash_data, hash_len, 0, &data_ptr);
+                if (ret_init >= 0) {
+                    ret_init = bpf_dynptr_from_mem(hash_out, 32, 0, &out_ptr);
+                    if (ret_init >= 0) {
+                        int ret = bpf_sha256_hash(&data_ptr, &out_ptr);
+
+                        __u64 latency = bpf_ktime_get_ns() - start;
+                        if (perf) {
+                            __sync_fetch_and_add(&perf->bpf_ops_completed, 1);
+                            __sync_fetch_and_add(&perf->bpf_total_latency_ns, latency);
+                            if (ret != 0)
+                                __sync_fetch_and_add(&perf->bpf_ops_failed, 1);
+                        }
+                    }
                 }
             }
         }

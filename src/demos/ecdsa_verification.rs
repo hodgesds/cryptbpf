@@ -122,7 +122,13 @@ pub fn run() -> Result<()> {
     let mut open_object = std::mem::MaybeUninit::uninit();
     let open_skel = skel_builder.open(&mut open_object)?;
     let skel = open_skel.load()?;
-    println!("✓ BPF object loaded using skeleton\n");
+    println!("✓ BPF object loaded using skeleton");
+
+    // Initialize algo_name_map with the algorithm name
+    let key = 0u32.to_ne_bytes();
+    let algo_name = b"p1363(ecdsa-nist-p256)\0\0"; // 24 bytes total
+    skel.maps.algo_name_map.update(&key, algo_name, libbpf_rs::MapFlags::ANY)?;
+    println!("✓ Algorithm name map initialized\n");
 
     // Generate a keypair for testing
     println!("--- Generating Test Keypair ---");

@@ -86,8 +86,8 @@ struct {
     __type(value, struct pow_stats);
 } pow_stats_map SEC(".maps");
 
-// External kfunc declarations
-extern int bpf_sha256_hash(const __u8 *data, __u32 len, __u8 *out) __ksym;
+// External kfunc declarations (updated for dynptr API)
+extern int bpf_sha256_hash(const struct bpf_dynptr *data, const struct bpf_dynptr *out) __ksym;
 
 static __always_inline void update_stat(__u64 *counter)
 {
@@ -159,7 +159,16 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         __builtin_memcpy(challenge_input, &client_ip, 4);
         __builtin_memcpy(challenge_input + 4, &now, 8);
 
-        bpf_sha256_hash(challenge_input, 12, challenge.challenge);
+        struct bpf_dynptr data_ptr, out_ptr;
+        long ret_init;
+
+        ret_init = bpf_dynptr_from_mem(challenge_input, 12, 0, &data_ptr);
+        if (ret_init >= 0) {
+            ret_init = bpf_dynptr_from_mem(challenge.challenge, 32, 0, &out_ptr);
+            if (ret_init >= 0) {
+                bpf_sha256_hash(&data_ptr, &out_ptr);
+            }
+        }
         bpf_map_update_elem(&challenges_map, &client_ip, &challenge, BPF_ANY);
 
         if (stats)
@@ -209,7 +218,18 @@ int xdp_crypto_ratelimit(struct xdp_md *ctx)
         __builtin_memcpy(verify_input + 32, &pow->nonce, 8);
 
         __u8 computed_hash[32];
-        int ret = bpf_sha256_hash(verify_input, 40, computed_hash);
+        struct bpf_dynptr verify_data_ptr, verify_out_ptr;
+        long verify_ret_init;
+
+        verify_ret_init = bpf_dynptr_from_mem(verify_input, 40, 0, &verify_data_ptr);
+        if (verify_ret_init < 0)
+            return XDP_DROP;
+
+        verify_ret_init = bpf_dynptr_from_mem(computed_hash, 32, 0, &verify_out_ptr);
+        if (verify_ret_init < 0)
+            return XDP_DROP;
+
+        int ret = bpf_sha256_hash(&verify_data_ptr, &verify_out_ptr);
         if (ret != 0)
             return XDP_DROP;
 

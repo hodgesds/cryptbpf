@@ -77,8 +77,8 @@ struct {
     __type(value, struct cas_config);
 } cas_config_map SEC(".maps");
 
-// External kfunc declarations
-extern int bpf_sha256_hash(const __u8 *data, __u32 len, __u8 *out) __ksym;
+// External kfunc declarations (updated for dynptr API)
+extern int bpf_sha256_hash(const struct bpf_dynptr *data, const struct bpf_dynptr *out) __ksym;
 
 static __always_inline void update_stat(__u64 *counter)
 {
@@ -175,7 +175,24 @@ int xdp_content_verifier(struct xdp_md *ctx)
 
     // Compute SHA-256 hash of content
     __u8 computed_hash[32];
-    int ret = bpf_sha256_hash(content, content_len, computed_hash);
+    struct bpf_dynptr data_ptr, out_ptr;
+    long ret_init;
+
+    ret_init = bpf_dynptr_from_mem(content, content_len, 0, &data_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->packets_invalid);
+        return XDP_DROP;
+    }
+
+    ret_init = bpf_dynptr_from_mem(computed_hash, 32, 0, &out_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->packets_invalid);
+        return XDP_DROP;
+    }
+
+    int ret = bpf_sha256_hash(&data_ptr, &out_ptr);
     if (ret != 0) {
         if (stats)
             update_stat(&stats->packets_invalid);

@@ -50,8 +50,8 @@ struct {
     __type(value, struct hash_stats);
 } hash_stats_map SEC(".maps");
 
-// External kfunc declaration
-extern int bpf_sha256_hash(const __u8 *data, __u32 len, __u8 *out) __ksym;
+// External kfunc declaration (updated for dynptr API)
+extern int bpf_sha256_hash(const struct bpf_dynptr *data, const struct bpf_dynptr *out) __ksym;
 
 // Hash data from a BPF map - much simpler than packet data!
 // Use SEC("syscall") for test_run compatibility (like kernel selftests)
@@ -77,8 +77,30 @@ int hash_from_map(void *ctx)
 
     // Hash directly from map - no packet bounds checking needed!
     // The verifier knows map memory is safe
-    __u8 hash[SHA256_DIGEST_SIZE];
-    int ret = bpf_sha256_hash(input->data, input->len, hash);
+    // Use map lookup to get hash output location
+    __u8 *hash = bpf_map_lookup_elem(&hash_output_map, &key);
+    if (!hash) {
+        bpf_printk("HashTest: ERROR - Failed to lookup hash output map");
+        return 1;
+    }
+
+    // Initialize dynptr for input data and output hash (using map memory)
+    struct bpf_dynptr data_ptr, out_ptr;
+    long ret_init;
+
+    ret_init = bpf_dynptr_from_mem((__u8 *)input->data, input->len, 0, &data_ptr);
+    if (ret_init < 0) {
+        bpf_printk("HashTest: ERROR - Failed to create data dynptr: %ld", ret_init);
+        return 1;
+    }
+
+    ret_init = bpf_dynptr_from_mem(hash, SHA256_DIGEST_SIZE, 0, &out_ptr);
+    if (ret_init < 0) {
+        bpf_printk("HashTest: ERROR - Failed to create output dynptr: %ld", ret_init);
+        return 1;
+    }
+
+    int ret = bpf_sha256_hash(&data_ptr, &out_ptr);
 
     if (ret != 0) {
         bpf_printk("HashTest: ERROR - Hash computation failed with code %d", ret);
@@ -89,8 +111,7 @@ int hash_from_map(void *ctx)
     __u32 hash_preview = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
     bpf_printk("HashTest: Hash computed successfully, first 4 bytes: 0x%08x", hash_preview);
 
-    // Store the hash
-    bpf_map_update_elem(&hash_output_map, &key, hash, 0);
+    // Hash is already in the map (we used map memory for output)
 
     // Update statistics
     struct hash_stats *stats = bpf_map_lookup_elem(&hash_stats_map, &key);

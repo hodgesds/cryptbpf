@@ -58,8 +58,8 @@ struct {
     __type(value, struct zkp_stats);
 } zkp_stats_map SEC(".maps");
 
-// External kfunc declarations
-extern int bpf_sha256_hash(const __u8 *data, __u32 len, __u8 *out) __ksym;
+// External kfunc declarations (updated for dynptr API)
+extern int bpf_sha256_hash(const struct bpf_dynptr *data, const struct bpf_dynptr *out) __ksym;
 
 static __always_inline void update_stat(__u64 *counter)
 {
@@ -135,7 +135,26 @@ int tc_zkp_filter(struct __sk_buff *skb)
     // more sophisticated cryptographic protocols (e.g., Schnorr, zk-SNARKs)
 
     __u8 response_hash[32];
-    int ret = bpf_sha256_hash(proof->response, 32, response_hash);
+
+    // Initialize dynptr for proof response and output hash
+    struct bpf_dynptr data_ptr, out_ptr;
+    long ret_init;
+
+    ret_init = bpf_dynptr_from_mem(proof->response, 32, 0, &data_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->proofs_rejected);
+        return TC_ACT_SHOT;
+    }
+
+    ret_init = bpf_dynptr_from_mem(response_hash, 32, 0, &out_ptr);
+    if (ret_init < 0) {
+        if (stats)
+            update_stat(&stats->proofs_rejected);
+        return TC_ACT_SHOT;
+    }
+
+    int ret = bpf_sha256_hash(&data_ptr, &out_ptr);
     if (ret != 0) {
         if (stats)
             update_stat(&stats->proofs_rejected);

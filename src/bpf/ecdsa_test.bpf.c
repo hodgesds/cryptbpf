@@ -54,6 +54,14 @@ struct {
 // Algorithm name (P1363 format wrapper for standard r||s signatures)
 const volatile char algo_name[24] = "p1363(ecdsa-nist-p256)";
 
+// Map to store algorithm name for dynptr creation
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, char[24]);
+} algo_name_map SEC(".maps");
+
 // ECDSA verification using syscall program type (for test_run)
 // Kfuncs are declared in vmlinux.h from kernel BTF
 // Syscall programs can use sleepable kfuncs with test_run
@@ -92,20 +100,38 @@ int ecdsa_verify_from_map(void *ctx)
                test_data->public_key[0], test_data->public_key[1],
                test_data->public_key[2], test_data->public_key[3]);
 
-    // Copy algorithm name to stack (verifier won't accept rodata pointer)
-    char algo_buf[24];
-    __builtin_memcpy(algo_buf, algo_name, 22);
-    algo_buf[22] = '\0';
+    // Get algorithm name from map (needed for dynptr creation from map memory)
+    char *algo_buf = bpf_map_lookup_elem(&algo_name_map, &key);
+    if (!algo_buf) {
+        bpf_printk("ECDSA Test: ERROR - algo name map not initialized");
+        result = -1;
+        bpf_map_update_elem(&ecdsa_result_map, &key, &result, 0);
+        return 1;
+    }
+
+    // Create dynptrs from map memory (not stack)
+    struct bpf_dynptr algo_ptr, pubkey_ptr;
+    long ret_init;
+
+    ret_init = bpf_dynptr_from_mem(algo_buf, 22, 0, &algo_ptr);
+    if (ret_init < 0) {
+        bpf_printk("ECDSA Test: ERROR - Failed to create algo dynptr: %ld", ret_init);
+        result = ret_init;
+        bpf_map_update_elem(&ecdsa_result_map, &key, &result, 0);
+        return 1;
+    }
+
+    ret_init = bpf_dynptr_from_mem((__u8 *)test_data->public_key, ECDSA_PUBKEY_SIZE, 0, &pubkey_ptr);
+    if (ret_init < 0) {
+        bpf_printk("ECDSA Test: ERROR - Failed to create pubkey dynptr: %ld", ret_init);
+        result = ret_init;
+        bpf_map_update_elem(&ecdsa_result_map, &key, &result, 0);
+        return 1;
+    }
 
     // Create ECDSA context with public key
     // Using p1363() wrapper to handle standard r||s signature format
-    struct bpf_ecdsa_ctx *ecdsa_ctx = bpf_ecdsa_ctx_create(
-        algo_buf,
-        22,  // length of "p1363(ecdsa-nist-p256)"
-        test_data->public_key,
-        ECDSA_PUBKEY_SIZE,
-        &err
-    );
+    struct bpf_ecdsa_ctx *ecdsa_ctx = bpf_ecdsa_ctx_create(&algo_ptr, &pubkey_ptr, &err);
 
     if (!ecdsa_ctx) {
         bpf_printk("ECDSA Test: ERROR - Failed to create context, err=%d", err);
@@ -116,14 +142,29 @@ int ecdsa_verify_from_map(void *ctx)
 
     bpf_printk("ECDSA Test: Context created successfully");
 
+    // Create dynptrs for message hash and signature (from map memory)
+    struct bpf_dynptr msg_ptr, sig_ptr;
+
+    ret_init = bpf_dynptr_from_mem((__u8 *)test_data->message_hash, SHA256_DIGEST_SIZE, 0, &msg_ptr);
+    if (ret_init < 0) {
+        bpf_printk("ECDSA Test: ERROR - Failed to create msg dynptr: %ld", ret_init);
+        bpf_ecdsa_ctx_release(ecdsa_ctx);
+        result = ret_init;
+        bpf_map_update_elem(&ecdsa_result_map, &key, &result, 0);
+        return 1;
+    }
+
+    ret_init = bpf_dynptr_from_mem((__u8 *)test_data->signature, ECDSA_SIG_SIZE, 0, &sig_ptr);
+    if (ret_init < 0) {
+        bpf_printk("ECDSA Test: ERROR - Failed to create sig dynptr: %ld", ret_init);
+        bpf_ecdsa_ctx_release(ecdsa_ctx);
+        result = ret_init;
+        bpf_map_update_elem(&ecdsa_result_map, &key, &result, 0);
+        return 1;
+    }
+
     // Verify signature using context
-    result = bpf_ecdsa_verify(
-        ecdsa_ctx,
-        test_data->message_hash,
-        SHA256_DIGEST_SIZE,
-        test_data->signature,
-        ECDSA_SIG_SIZE
-    );
+    result = bpf_ecdsa_verify(ecdsa_ctx, &msg_ptr, &sig_ptr);
 
     // Release the context
     bpf_ecdsa_ctx_release(ecdsa_ctx);
