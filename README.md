@@ -16,8 +16,6 @@ the kernel at XDP and TC layers.
 ### Encrypted Network Packet Tunnel (TC + XDP)
 **File**: `src/bpf/encrypted_tunnel.bpf.c`
 
-**⭐ REAL ENCRYPTION WORKING!** - Uses actual kernel AES-256-CBC encryption in TC programs via the kptr pattern.
-
 Creates an in-kernel VPN-like encrypted tunnel using TC/XDP for ultra-low latency packet encryption/decryption.
 
 **Features**:
@@ -187,9 +185,6 @@ bpftool btf dump file /sys/kernel/btf/vmlinux | grep -E "bpf_sha256_hash|bpf_ecd
 
 ### Kernel Modifications (For Encrypted Tunnel Demo)
 
-**⚠️ Important**: The encrypted tunnel demo requires a kernel patch to enable `bpf_crypto_ctx_acquire()` for TC/XDP programs.
-
-The patch is already applied in `/root/linux/kernel/bpf/crypto.c`. To test with the modified kernel:
 
 ```bash
 # Install virtme-ng for quick kernel testing
@@ -211,12 +206,6 @@ tc qdisc add dev lo clsact
 cd /root/cryptbpf
 ./target/release/cryptbpf encrypted-tunnel --device lo
 ```
-
-**What was changed**:
-- File: `kernel/bpf/crypto.c` lines 879-889
-- Added: Registration of `bpf_crypto_ctx_acquire()` and `bpf_crypto_ctx_release()` for `BPF_PROG_TYPE_SCHED_CLS` and `BPF_PROG_TYPE_XDP`
-- Why: Enables the kptr pattern for persistent crypto contexts in TC/XDP programs
-- See: `KERNEL_FIX_CRYPTO_ACQUIRE.md` for technical details
 
 ### Compile
 
@@ -892,26 +881,8 @@ println!("Routed to BPF: {}", stats.routed_to_bpf);
 println!("Routed to HW: {}", stats.routed_to_hw);
 ```
 
-**Performance Comparison**:
-```
-┌─────────────────┬────────────┬──────────────┬──────────────┐
-│ Operation       │ Size       │ BPF Latency  │ HW Latency   │
-├─────────────────┼────────────┼──────────────┼──────────────┤
-│ SHA-256         │ 256 B      │ 100 ns ✓     │ 5 μs         │
-│ SHA-256         │ 4 KB       │ 1.5 μs       │ 500 ns ✓     │
-│ AES-GCM Encrypt │ 1500 B     │ 500 ns       │ 200 ns ✓     │
-│ ECDSA Verify    │ 32 B       │ 20 μs ✓      │ 50 μs        │
-└─────────────────┴────────────┴──────────────┴──────────────┘
-```
-
 **Run**: `cargo run -- crypto-offload --device eth0`
 
-## Contributing
-
-Contributions are welcome! Please ensure:
-1. Code follows Rust and BPF best practices
-2. All security implications are documented
-3. Tests pass on latest kernel versions
 
 ## References
 
