@@ -11,6 +11,8 @@ This project showcases different BPF programs that leverage the new Linux
 kernel crypto kfuncs to implement novel cryptographic applications directly in
 the kernel at XDP and TC layers.
 
+[PATCH SET](https://lore.kernel.org/bpf/20251117211413.1394-1-git@danielhodges.dev/T/#t)
+
 ## Programs Implemented
 
 ### Encrypted Network Packet Tunnel (TC + XDP)
