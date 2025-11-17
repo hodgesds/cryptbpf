@@ -134,7 +134,7 @@ pub fn run() -> Result<()> {
         println!("BPF  SHA-256: {}", hex::encode(&bpf_hash_bytes[..8]));
 
         // Compare
-        if rust_hash.as_slice() == bpf_hash_bytes.as_slice() {
+        if &rust_hash[..] == &bpf_hash_bytes[..] {
             println!("✅ MATCH\n");
         } else {
             println!("❌ MISMATCH");

@@ -77,6 +77,12 @@ enum Commands {
     KernelCheck,
     /// Compare BPF ECDSA verification with Rust (secp256r1)
     EcdsaVerification,
+    /// Test persistent crypto contexts using kptr (PROOF OF CONCEPT)
+    CryptoContextTest {
+        /// Network interface to attach to
+        #[arg(short, long)]
+        device: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -93,6 +99,7 @@ fn main() -> Result<()> {
     let needs_root = !matches!(cli.command, Commands::HashComparison | Commands::ProgTestRunDemo | Commands::KernelCheck | Commands::EcdsaVerification);
     if needs_root && !nix::unistd::Uid::effective().is_root() {
         eprintln!("Error: This program must be run as root (sudo)");
+        eprintln!("Note: Some test commands (hash-comparison, kernel-check, ecdsa-verification) don't need root");
         std::process::exit(1);
     }
 
@@ -144,6 +151,9 @@ fn main() -> Result<()> {
         }
         Commands::EcdsaVerification => {
             demos::ecdsa_verification::run()
+        }
+        Commands::CryptoContextTest { device } => {
+            demos::crypto_context_test::run(&device)
         }
     }
 }

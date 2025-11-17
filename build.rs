@@ -13,6 +13,7 @@ const BPF_PROGRAMS: &[&str] = &[
     "crypto_offload",
     "hash_test",
     "ecdsa_test",
+    "crypto_context_test",
 ];
 
 fn main() {
