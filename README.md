@@ -38,7 +38,7 @@ Solves the "crypto context persistence problem" using BPF `__kptr`:
 **Note**: Currently uses CBC mode instead of GCM because BPF crypto only implements `skcipher` type (not AEAD). CBC provides confidentiality; integrity could be added via separate HMAC or ECDSA signatures.
 
 **Use Cases**:
-- High-performance VPNs (~10-15 Gbps throughput)
+- High-performance VPNs
 - Secure container networking
 - Service mesh encryption
 - Zero-trust network segments
